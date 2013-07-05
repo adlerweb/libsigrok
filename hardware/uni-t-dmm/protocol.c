@@ -67,6 +67,8 @@
  *  - Voltcraft VC-820: Fortune Semiconductor FS9721_LP3
  *  - Voltcraft VC-830: Fortune Semiconductor FS9922-DMM4
  *  - Voltcraft VC-840: Fortune Semiconductor FS9721_LP3
+ *  - UNI-T UT60A: Fortune Semiconductor FS9721_LP3
+ *  - UNI-T UT60E: Fortune Semiconductor FS9721_LP3
  *  - ...
  */
 
@@ -310,3 +312,5 @@ RECEIVE_DATA(UNI_T_UT61E, es51922)
 RECEIVE_DATA(VOLTCRAFT_VC820, fs9721)
 RECEIVE_DATA(VOLTCRAFT_VC830, fs9922)
 RECEIVE_DATA(VOLTCRAFT_VC840, fs9721)
+RECEIVE_DATA(UNI_T_UT60A, fs9721)
+RECEIVE_DATA(UNI_T_UT60E, fs9721)
