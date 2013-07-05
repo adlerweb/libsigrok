@@ -179,6 +179,11 @@ AC_ARG_ENABLE(serial-dmm, AC_HELP_STRING([--enable-serial-dmm],
 	[HW_SERIAL_DMM="$enableval"],
 	[HW_SERIAL_DMM=$HW_ENABLED_DEFAULT])
 
+AC_ARG_ENABLE(siglent-sds1xxx, AC_HELP_STRING([--enable-siglent-sds1xxx],
+	[enable Siglenz SDS1xxx support [default=yes]]),
+	[HW_SIGLENT_SDS1XXX="$enableval"],
+	[HW_SIGLENT_SDS1XXX=$HW_ENABLED_DEFAULT])
+
 AC_ARG_ENABLE(tondaj-sl-814, AC_HELP_STRING([--enable-tondaj-sl-814],
 	[enable Tondaj SL-814 support [default=yes]]),
 	[HW_TONDAJ_SL_814="$enableval"],
@@ -277,9 +282,10 @@ PKG_CHECK_MODULES([check], [check >= 0.9.4],
 	LIBS="$LIBS $check_LIBS"], [have_check="no"])
 AM_CONDITIONAL(HAVE_CHECK, test x"$have_check" = "xyes")
 
-# The Rigol DS1xx2 driver currently uses the Linux kernel usbtmc module
-# (though it is planned to rewrite the driver to be portable later).
-# Thus, it will be disabled for non-Linux builds for now.
+# The Rigol DS1xx2 and Siglent SDS1xxx drivers currently use the 
+# Linux kernel usbtmc module (though it is planned to rewrite the 
+# driver to be portable later). Thus, it will be disabled for 
+# non-Linux builds for now.
 case "$host" in
 *linux*)
 	# Do nothing. Whether the driver is enabled is determined by the
@@ -289,6 +295,7 @@ case "$host" in
 *)
 	# Disable the driver for builds that don't target Linux.
 	HW_RIGOL_DS1XX2="no"
+    HW_SIGLENT_SDS1XXX="no"
 	;;
 esac
 
@@ -391,6 +398,11 @@ if test "x$HW_SERIAL_DMM" = "xyes"; then
 	AC_DEFINE(HAVE_HW_SERIAL_DMM, 1, [Serial DMM support])
 fi
 
+AM_CONDITIONAL(HW_SIGLENT_SDS1XXX, test x$HW_SIGLENT_SDS1XXX = xyes)
+if test "x$HW_SIGLENT_SDS1XXX" = "xyes"; then
+	AC_DEFINE(HAVE_HW_SIGLENT_DS1XXX, 1, [Siglent SDS1xxx support])
+fi
+
 AM_CONDITIONAL(HW_TONDAJ_SL_814, test x$HW_TONDAJ_SL_814 = xyes)
 if test "x$HW_TONDAJ_SL_814" = "xyes"; then
 	AC_DEFINE(HAVE_HW_TONDAJ_SL_814, 1, [Tondaj SL-814 support])
@@ -458,6 +470,7 @@ AC_CONFIG_FILES([Makefile version.h hardware/Makefile
 		 hardware/mic-985xx/Makefile
 		 hardware/nexus-osciprime/Makefile
 		 hardware/rigol-ds1xx2/Makefile
+         hardware/siglent-sds1xxx/Makefile
 		 hardware/tondaj-sl-814/Makefile
 		 hardware/victor-dmm/Makefile
 		 hardware/common/dmm/Makefile
@@ -523,6 +536,7 @@ echo "  - nexus-osciprime................. $HW_NEXUS_OSCIPRIME"
 echo "  - openbench-logic-sniffer......... $HW_OLS"
 echo "  - rigol-ds1xx2.................... $HW_RIGOL_DS1XX2"
 echo "  - serial-dmm...................... $HW_SERIAL_DMM"
+echo "  - siglent-sds1xxx................. $HW_SIGLENT_SDS1XXX"
 echo "  - tondaj-sl-814................... $HW_TONDAJ_SL_814"
 echo "  - uni-t-dmm....................... $HW_UNI_T_DMM"
 echo "  - victor-dmm...................... $HW_VICTOR_DMM"

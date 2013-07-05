@@ -39,6 +39,7 @@ SUBDIRS = \
 	openbench-logic-sniffer \
 	rigol-ds1xx2 \
 	serial-dmm \
+	siglent-sds1xxx \
 	tondaj-sl-814 \
 	uni-t-dmm \
 	victor-dmm \
@@ -125,6 +126,10 @@ endif
 
 if HW_SERIAL_DMM
 libsigrokhardware_la_LIBADD += serial-dmm/libsigrok_hw_serial_dmm.la
+endif
+
+if HW_SIGLENT_SDS1XXX
+libsigrokhardware_la_LIBADD += siglent-sds1xxx/libsigrok_hw_siglent_sds1xxx.la
 endif
 
 if HW_TONDAJ_SL_814
