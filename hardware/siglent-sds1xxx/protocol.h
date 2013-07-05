@@ -61,6 +61,8 @@ struct dev_context {
 	struct sr_probe *channel_frame;
 };
 
+gboolean first_frame;
+
 SR_PRIV int siglent_sds1xxx_receive(int fd, int revents, void *cb_data);
 SR_PRIV int siglent_sds1xxx_send(const struct sr_dev_inst *sdi, const char *format, ...);
 SR_PRIV int siglent_sds1xxx_get_dev_cfg(const struct sr_dev_inst *sdi);

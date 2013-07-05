@@ -180,7 +180,7 @@ AC_ARG_ENABLE(serial-dmm, AC_HELP_STRING([--enable-serial-dmm],
 	[HW_SERIAL_DMM=$HW_ENABLED_DEFAULT])
 
 AC_ARG_ENABLE(siglent-sds1xxx, AC_HELP_STRING([--enable-siglent-sds1xxx],
-	[enable Siglenz SDS1xxx support [default=yes]]),
+	[enable Siglent SDS1xxx support [default=yes]]),
 	[HW_SIGLENT_SDS1XXX="$enableval"],
 	[HW_SIGLENT_SDS1XXX=$HW_ENABLED_DEFAULT])
 
@@ -400,7 +400,7 @@ fi
 
 AM_CONDITIONAL(HW_SIGLENT_SDS1XXX, test x$HW_SIGLENT_SDS1XXX = xyes)
 if test "x$HW_SIGLENT_SDS1XXX" = "xyes"; then
-	AC_DEFINE(HAVE_HW_SIGLENT_DS1XXX, 1, [Siglent SDS1xxx support])
+	AC_DEFINE(HAVE_HW_SIGLENT_SDS1XXX, 1, [Siglent SDS1xxx support])
 fi
 
 AM_CONDITIONAL(HW_TONDAJ_SL_814, test x$HW_TONDAJ_SL_814 = xyes)

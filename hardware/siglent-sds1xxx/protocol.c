@@ -42,7 +42,7 @@ SR_PRIV int siglent_sds1xxx_receive(int fd, int revents, void *cb_data)
 	float data[ANALOG_WAVEFORM_SIZE];
 	int len, i, waveform_size;
 	struct sr_probe *probe;
-
+    
 	(void)fd;
 
 	if (!(sdi = cb_data))
@@ -58,19 +58,27 @@ SR_PRIV int siglent_sds1xxx_receive(int fd, int revents, void *cb_data)
 		waveform_size = ANALOG_WAVEFORM_SIZE;
 		len = serial_read(serial, buf, waveform_size - devc->num_frame_bytes);
 		sr_dbg("Received %d bytes.", len);
-		if (len == -1)
-			return TRUE;
 
-		if (devc->num_frame_bytes == 0) {
+		if (first_frame == TRUE) {
 			/* Start of a new frame. */
 			packet.type = SR_DF_FRAME_BEGIN;
 			sr_session_send(sdi, &packet);
+            first_frame = FALSE;
 		}
+
+        if(len == -1) {
+		    packet.type = SR_DF_FRAME_END;
+		    sr_session_send(sdi, &packet);
+		    devc->num_frame_bytes = 0;
+            return TRUE;
+        }
 
 		for (i = 0; i < len; i++) {
 			vdiv = devc->vdiv[probe->index];
 			offset = devc->vert_offset[probe->index];
-			data[i] = vdiv / 25.6 * (128 - buf[i]) - offset;
+			//data[i] = vdiv / 25.6 * (128 - buf[i]) - offset;
+            //sr_dbg("Raw Data was: %3.9f computed value %3.9f with division %3.9f and offset %3.9f", buf[i], data[i], vdiv, offset);
+            data[i] = buf[i] - offset;
 		}
 		analog.probes = g_slist_append(NULL, probe);
 		analog.num_samples = len;
@@ -83,11 +91,10 @@ SR_PRIV int siglent_sds1xxx_receive(int fd, int revents, void *cb_data)
 		sr_session_send(cb_data, &packet);
 		g_slist_free(analog.probes);
 
-		if (len != ANALOG_WAVEFORM_SIZE)
-			/* Don't have the whole frame yet. */
+		if (len == ANALOG_WAVEFORM_SIZE)
+			/* most likely a new frame will follow... */
 			return TRUE;
 		
-
 		/* End of the frame. */
 		packet.type = SR_DF_FRAME_END;
 		sr_session_send(sdi, &packet);
@@ -95,13 +102,25 @@ SR_PRIV int siglent_sds1xxx_receive(int fd, int revents, void *cb_data)
 
 		if (devc->enabled_analog_probes
 				&& devc->channel_frame == devc->enabled_analog_probes->data
-				&& devc->enabled_analog_probes->next != NULL) {
+				&& devc->enabled_analog_probes->next != NULL &&
+                devc->analog_channels[devc->channel_frame->index]) {
 			/* We got the frame for the first analog channel, but
 			 * there's a second analog channel. */
 			devc->channel_frame = devc->enabled_analog_probes->next->data;
-			siglent_sds1xxx_send(sdi, ":WAV:DATA? CHAN%c",
-					devc->channel_frame->name[2]);
-		}
+			siglent_sds1xxx_send(sdi, "C%d:WF?",
+					devc->channel_frame->index + 1);
+            first_frame = TRUE;
+		} else {
+            if (++devc->num_frames == devc->limit_frames) {
+                /* End of last frame. */
+                sdi->driver->dev_acquisition_stop(sdi, cb_data);
+            } else {
+                /* Get the next frame, starting with the first analog channel. */
+                devc->channel_frame = devc->enabled_analog_probes->data;
+                rigol_ds1xx2_send(sdi, "C%d:WF?",
+                        devc->channel_frame->index);
+            }
+        }
 	}
 
 	return TRUE;
@@ -176,64 +195,86 @@ static int get_cfg_string(const struct sr_dev_inst *sdi, char *cmd, char **buf)
 SR_PRIV int siglent_sds1xxx_get_dev_cfg(const struct sr_dev_inst *sdi)
 {
 	struct dev_context *devc;
+    char *buf;
+    gchar **tokens;
 	char *t_s;
 
 	devc = sdi->priv;
 
 	/* Analog channel state. */
-	if (get_cfg_string(sdi, ":CHAN1:DISP?", &t_s) != SR_OK)
+	if (get_cfg_string(sdi, "C1:TRA?", &t_s) != SR_OK)
 		return SR_ERR;
-	devc->analog_channels[0] = !strcmp(t_s, "ON") ? TRUE : FALSE;
+	devc->analog_channels[0] = !strcmp(t_s, "ON\n") ? TRUE : FALSE;
 	g_free(t_s);
-	if (get_cfg_string(sdi, ":CHAN2:DISP?", &t_s) != SR_OK)
+	if (get_cfg_string(sdi, "C2:TRA?", &t_s) != SR_OK)
 		return SR_ERR;
-	devc->analog_channels[1] = !strcmp(t_s, "ON") ? TRUE : FALSE;
+	devc->analog_channels[1] = !strcmp(t_s, "ON\n") ? TRUE : FALSE;
 	g_free(t_s);
-	sr_dbg("Current analog channel state CH1 %s CH2 %s",
+	sr_dbg("Current analog channel state C1 %s C2 %s",
 			devc->analog_channels[0] ? "on" : "off",
 			devc->analog_channels[1] ? "on" : "off");
 
 	/* Timebase. */
-	if (get_cfg_float(sdi, ":TIM:SCAL?", &devc->timebase) != SR_OK)
+	if (get_cfg_float(sdi, ":TDIV?", &devc->timebase) != SR_OK)
 		return SR_ERR;
 	sr_dbg("Current timebase %f", devc->timebase);
 
 	/* Vertical gain. */
-	if (get_cfg_float(sdi, ":CHAN1:SCAL?", &devc->vdiv[0]) != SR_OK)
+	if (get_cfg_float(sdi, "C1:VDIV?", &devc->vdiv[0]) != SR_OK)
 		return SR_ERR;
-	if (get_cfg_float(sdi, ":CHAN2:SCAL?", &devc->vdiv[1]) != SR_OK)
+	if (get_cfg_float(sdi, "C2:VDIV?", &devc->vdiv[1]) != SR_OK)
 		return SR_ERR;
-	sr_dbg("Current vertical gain CH1 %f CH2 %f", devc->vdiv[0], devc->vdiv[1]);
+	sr_dbg("Current vertical gain C1 %f C2 %f", devc->vdiv[0], devc->vdiv[1]);
 
 	/* Vertical offset. */
-	if (get_cfg_float(sdi, ":CHAN1:OFFS?", &devc->vert_offset[0]) != SR_OK)
+	if (get_cfg_float(sdi, "C1:OFST?", &devc->vert_offset[0]) != SR_OK)
 		return SR_ERR;
-	if (get_cfg_float(sdi, ":CHAN2:OFFS?", &devc->vert_offset[1]) != SR_OK)
+	if (get_cfg_float(sdi, "C2:OFST?", &devc->vert_offset[1]) != SR_OK)
 		return SR_ERR;
-	sr_dbg("Current vertical offset CH1 %f CH2 %f", devc->vert_offset[0],
+	sr_dbg("Current vertical offset C1 %f C2 %f", devc->vert_offset[0],
 			devc->vert_offset[1]);
 
 	/* Coupling. */
-	if (get_cfg_string(sdi, ":CHAN1:COUP?", &devc->coupling[0]) != SR_OK)
+	if (get_cfg_string(sdi, "C1:CPL?", &devc->coupling[0]) != SR_OK)
 		return SR_ERR;
-	if (get_cfg_string(sdi, ":CHAN2:COUP?", &devc->coupling[1]) != SR_OK)
+	if (get_cfg_string(sdi, "C2:CPL?", &devc->coupling[1]) != SR_OK)
 		return SR_ERR;
-	sr_dbg("Current coupling CH1 %s CH2 %s", devc->coupling[0],
+    devc->coupling[0][ strlen(devc->coupling[0]) - 1 ] = '\0'; //Drop newline
+    devc->coupling[1][ strlen(devc->coupling[1]) - 1 ] = '\0'; //Drop newline
+	sr_dbg("Current coupling C1 %s C2 %s", devc->coupling[0],
 			devc->coupling[1]);
 
 	/* Trigger source. */
-	if (get_cfg_string(sdi, ":TRIG:EDGE:SOUR?", &devc->trigger_source) != SR_OK)
+	if (get_cfg_string(sdi, ":TRSE?", &buf) != SR_OK)
 		return SR_ERR;
+    tokens = g_strsplit(buf, ",", 0);
+    devc->trigger_source = tokens[2];
 	sr_dbg("Current trigger source %s", devc->trigger_source);
 
 	/* Horizontal trigger position. */
-	if (get_cfg_float(sdi, ":TIM:OFFS?", &devc->horiz_triggerpos) != SR_OK)
-		return SR_ERR;
+    if(strcmp(devc->trigger_source, "C1")) {
+    	if (get_cfg_float(sdi, "C1:TRLV?", &devc->horiz_triggerpos) != SR_OK)
+	    	return SR_ERR;
+    } else if(strcmp(devc->trigger_source, "C2")) {
+    	if (get_cfg_float(sdi, "C2:TRLV?", &devc->horiz_triggerpos) != SR_OK)
+	    	return SR_ERR;
+    } else {
+        sr_dbg("Failed to read horizontal trigger position - trigger source error");
+        return SR_ERR;
+    }
 	sr_dbg("Current horizontal trigger position %f", devc->horiz_triggerpos);
 
 	/* Trigger slope. */
-	if (get_cfg_string(sdi, ":TRIG:EDGE:SLOP?", &devc->trigger_slope) != SR_OK)
-		return SR_ERR;
+	if(strcmp(devc->trigger_source, "C1")) {
+        if (get_cfg_string(sdi, "C1:TRSL?", &devc->trigger_slope) != SR_OK)
+		    return SR_ERR;
+    } else if(strcmp(devc->trigger_source, "C2")) {
+        if (get_cfg_string(sdi, "C2:TRSL?", &devc->trigger_slope) != SR_OK)
+            return SR_ERR;
+    } else{
+        sr_dbg("Failed to read trigger slope - trigger source error");
+            return SR_ERR;
+    }
 	sr_dbg("Current trigger slope %s", devc->trigger_slope);
 
 	return SR_OK;

@@ -28,8 +28,8 @@
 #include "libsigrok-internal.h"
 #include "protocol.h"
 
-#define NUM_TIMEBASE  12
-#define NUM_VDIV      8
+#define NUM_TIMEBASE  32
+#define NUM_VDIV      12
 
 static const int32_t hwopts[] = {
 	SR_CONF_CONN,
@@ -187,13 +187,13 @@ static int probe_port(const char *port, GSList **devices)
 		return SR_ERR;
 	len = serial_write(serial, "*IDN?", 5);
 	len = serial_read(serial, buf, sizeof(buf));
-	if (serial_close(serial) != SR_OK)
-		return SR_ERR;
 
-	sr_serial_dev_inst_free(serial);
-
-	if (len == 0)
+	if (len == 0) {
+	    if (serial_close(serial) != SR_OK)
+		    return SR_ERR;
+	    sr_serial_dev_inst_free(serial);
 		return SR_ERR_NA;
+	}
 
 	buf[len] = 0;
 	tokens = g_strsplit(buf, ",", 0);
@@ -202,6 +202,9 @@ static int probe_port(const char *port, GSList **devices)
 	for (num_tokens = 0; tokens[num_tokens] != NULL; num_tokens++);
 
 	if (num_tokens < 4) {
+	    if (serial_close(serial) != SR_OK)
+		    return SR_ERR;
+	    sr_serial_dev_inst_free(serial);
 		g_strfreev(tokens);
 		return SR_ERR_NA;
 	}
@@ -209,11 +212,25 @@ static int probe_port(const char *port, GSList **devices)
 	manufacturer = tokens[0];
 	model = tokens[1];
 	version = tokens[3];
+	
+	sr_dbg("Manufacturer: [%s]", manufacturer);
+	sr_dbg("Model: [%s]", model);
+	sr_dbg("Version: [%s]", version);
 
-	if (strcmp(manufacturer, "SIGLENT")) {
-		g_strfreev(tokens);
-		return SR_ERR_NA;
+	if (strcmp(manufacturer, "SIGLENT")) { //command echo is off
+	    if (strcmp(manufacturer, "*IDN SIGLENT")) { //command echo is on
+		    g_strfreev(tokens);
+		    sr_serial_dev_inst_free(serial);
+		    return SR_ERR_NA;
+	    } else{ //disable command echo for further communication
+	        sr_dbg("Scope uses command echo - disabling");
+		    serial_write(serial, ":CHDR OFF", 9);
+	    }
 	}
+	
+	if (serial_close(serial) != SR_OK)
+		return SR_ERR;
+	sr_serial_dev_inst_free(serial);
 
 	matched = FALSE;
 	for (i = 0; i < ARRAY_SIZE(supported_models); i++) {
@@ -547,7 +564,7 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi, void *cb_data)
 						devc->enabled_analog_probes, probe);
 			if (probe->enabled != devc->analog_channels[probe->index]) {
 				/* Enabled channel is currently disabled, or vice versa. */
-				sprintf(cmd, ":CHAN%d:DISP %s", probe->index + 1,
+				sprintf(cmd, ":C%d:TRA %s", probe->index + 1,
 						probe->enabled ? "ON" : "OFF"); //@todo
 				if (siglent_sds1xxx_send(sdi, cmd) != SR_OK)
 					return SR_ERR;
@@ -564,8 +581,10 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi, void *cb_data)
 
 	/* Fetch the first frame. */
 	if (devc->enabled_analog_probes) {
+        sr_dbg("Reading Channel");
 		devc->channel_frame = devc->enabled_analog_probes->data;
-		if (siglent_sds1xxx_send(sdi, "C%d:WF?", //@todo
+        first_frame = TRUE;
+		if (siglent_sds1xxx_send(sdi, "C%d:WF?", 
 				devc->channel_frame->index + 1) != SR_OK)
 			return SR_ERR;
 	}
